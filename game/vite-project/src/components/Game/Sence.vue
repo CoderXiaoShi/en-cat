@@ -20,5 +20,9 @@
   background-image: url('./background.png');
   background-size: 100% 100%;
   border: 5px solid #0084ff;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
 }
 </style>
