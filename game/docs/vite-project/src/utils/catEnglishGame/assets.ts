@@ -99,7 +99,38 @@ export async function loadGameAssets(): Promise<LoadedAssets> {
     en_0: createAudio(vocabItems[0].enAudioSrc),
     en_1: createAudio(vocabItems[1].enAudioSrc),
     en_2: createAudio(vocabItems[2].enAudioSrc),
+    success_upper: createAudio('/imgs/success.MP3'),
+    success_lower: createAudio('/imgs/success.mp3'),
   }
 
   return { images, audios }
+}
+
+export async function playSuccessSound(audios: Record<string, HTMLAudioElement>) {
+  const a = audios.success_upper || audios.success_lower
+  if (a) {
+    await playAudio(a)
+    return
+  }
+  try {
+    const Ctor =
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext ||
+      AudioContext
+    const ctx = new Ctor()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0, ctx.currentTime)
+    gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4)
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, ctx.currentTime)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    await ctx.resume()
+    osc.start()
+    osc.stop(ctx.currentTime + 0.4)
+    await new Promise((r) => setTimeout(r, 420))
+    ctx.close()
+  } catch {
+  }
 }

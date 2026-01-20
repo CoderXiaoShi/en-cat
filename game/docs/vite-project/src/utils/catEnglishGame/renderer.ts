@@ -13,6 +13,7 @@ export type GameRenderState = {
   catPose: CatPose
   questionIndex: number
   lastChoice: LastChoice | null
+  mode?: 'practice' | 'dictation'
 }
 
 export type HitZone =
@@ -131,45 +132,32 @@ export function createGameRenderer(canvas: HTMLCanvasElement, assets: LoadedAsse
     }
 
     const catImg = assets.images[catImgKey[state.catPose]]
-    const catW = w * 0.62
+    const baseCatW = w * 0.62
+    const catW = state.catPose === 'prepare' ? baseCatW * 0.8 : baseCatW
     const catScale = catW / catImg.width
     const catH = catImg.height * catScale
     const catX = (w - catW) / 2
     const catY = h * 0.72 - catH * 0.78
     ctx.drawImage(catImg, catX, catY, catW, catH)
 
-    const q = vocabItems[state.questionIndex]
-    const bubbleW = Math.min(w * 0.78, 340)
-    const bubbleH = Math.max(44, Math.round(h * 0.09))
-    const bubbleX = (w - bubbleW) / 2
-    const bubbleY = Math.max(14, catY - bubbleH * 0.72)
-    roundRectPath(ctx, bubbleX, bubbleY, bubbleW, bubbleH, 16)
-    ctx.fillStyle = 'rgba(255,255,255,0.96)'
-    ctx.fill()
-    ctx.lineWidth = 2
-    ctx.strokeStyle = 'rgba(0,0,0,0.10)'
-    ctx.stroke()
-    ctx.fillStyle = 'rgba(0,0,0,0.88)'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.font = `600 ${Math.max(14, Math.round(h * 0.032))}px system-ui, -apple-system, Segoe UI, Arial`
-    drawTextCentered(ctx, q.en, bubbleX + bubbleW / 2, bubbleY + bubbleH / 2, bubbleW - 22)
-
-    const repeatSize = Math.max(36, Math.round(h * 0.06))
-    const repeatX = w - repeatSize - 14
-    const repeatY = 14
-    roundRectPath(ctx, repeatX, repeatY, repeatSize, repeatSize, repeatSize / 2)
-    ctx.fillStyle = 'rgba(255,255,255,0.92)'
-    ctx.fill()
-    ctx.lineWidth = 2
-    ctx.strokeStyle = 'rgba(0,0,0,0.12)'
-    ctx.stroke()
-    ctx.fillStyle = 'rgba(0,0,0,0.75)'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.font = `700 ${Math.max(12, Math.round(h * 0.028))}px system-ui, -apple-system, Segoe UI, Arial`
-    ctx.fillText('重听', repeatX + repeatSize / 2, repeatY + repeatSize / 2)
-    hitZones.push({ kind: 'repeat', x: repeatX, y: repeatY, w: repeatSize, h: repeatSize })
+    if (state.mode !== 'practice') {
+      const q = vocabItems[state.questionIndex]
+      const bubbleW = Math.min(w * 0.78, 340)
+      const bubbleH = Math.max(44, Math.round(h * 0.09))
+      const bubbleX = (w - bubbleW) / 2
+      const bubbleY = Math.max(14, catY - bubbleH * 0.72)
+      roundRectPath(ctx, bubbleX, bubbleY, bubbleW, bubbleH, 16)
+      ctx.fillStyle = 'rgba(255,255,255,0.96)'
+      ctx.fill()
+      ctx.lineWidth = 2
+      ctx.strokeStyle = 'rgba(0,0,0,0.10)'
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(0,0,0,0.88)'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.font = `600 ${Math.max(14, Math.round(h * 0.032))}px system-ui, -apple-system, Segoe UI, Arial`
+      drawTextCentered(ctx, q.en, bubbleX + bubbleW / 2, bubbleY + bubbleH / 2, bubbleW - 22)
+    }
   }
 
   function hitTest(x: number, y: number) {
@@ -182,4 +170,3 @@ export function createGameRenderer(canvas: HTMLCanvasElement, assets: LoadedAsse
 
   return { render, hitTest }
 }
-

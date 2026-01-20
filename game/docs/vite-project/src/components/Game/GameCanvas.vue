@@ -1,14 +1,10 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import {
-  loadGameAssets,
-  pickNextQuestionIndex,
-  playAudio,
-  vocabItems,
-} from '@/utils/catEnglishGame/assets'
+import { onBeforeUnmount, onMounted, ref, computed, nextTick } from 'vue'
+import { loadGameAssets, pickNextQuestionIndex, playAudio, vocabItems, playSuccessSound } from '@/utils/catEnglishGame/assets'
 import type { LoadedAssets } from '@/utils/catEnglishGame/assets'
 import { createGameRenderer } from '@/utils/catEnglishGame/renderer'
 import type { CatPose, LastChoice } from '@/utils/catEnglishGame/renderer'
+import EnglishKeyboard from '@/components/Keyboard/EnglishKeyboard.vue'
 
 const shellRef = ref<HTMLDivElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -16,6 +12,9 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const phase = ref<'loading' | 'ready'>('loading')
 const errorText = ref('')
 const startedByUser = ref(false)
+const mode = ref<'practice' | 'dictation'>('practice')
+const showKeyboard = ref(false)
+const keyboardWrapRef = ref<HTMLDivElement | null>(null)
 
 const questionIndex = ref(0)
 const catPose = ref<CatPose>('prepare')
@@ -36,7 +35,19 @@ function getState() {
     catPose: catPose.value,
     questionIndex: questionIndex.value,
     lastChoice: lastChoice.value,
+    mode: mode.value,
   }
+}
+
+function playQuestionAudio() {
+  if (!assets) return
+  const a = assets.audios[`en_${questionIndex.value}`]
+  if (!a) return
+  if (mode.value === 'practice') {
+    catPose.value = questionIndex.value === 0 ? 'left' : questionIndex.value === 1 ? 'center' : 'right'
+    renderer?.render(getState())
+  }
+  void playAudio(a)
 }
 
 function resizeCanvas() {
@@ -62,7 +73,11 @@ function nextQuestion(playEn: boolean) {
   questionIndex.value = pickNextQuestionIndex(questionIndex.value, vocabItems.length)
   lastChoice.value = null
   renderer?.render(getState())
-  if (playEn && startedByUser.value && assets) void playAudio(assets.audios[`en_${questionIndex.value}`])
+  if (mode.value === 'practice') {
+    practiceInput.value = ''
+    showKeyboard.value = false
+  }
+  if (playEn && startedByUser.value && assets) void playQuestionAudio()
 }
 
 function startGame() {
@@ -72,13 +87,22 @@ function startGame() {
   questionIndex.value = pickNextQuestionIndex(-1, vocabItems.length)
   lastChoice.value = null
   renderer?.render(getState())
-  if (assets) void playAudio(assets.audios[`en_${questionIndex.value}`])
+  if (mode.value === 'practice') {
+    practiceInput.value = ''
+    showKeyboard.value = false
+  }
+  if (assets) void playQuestionAudio()
 }
 
 function handlePointerDown(e: PointerEvent) {
   const canvas = canvasRef.value
   if (!canvas || !renderer) return
   e.preventDefault()
+
+  if (mode.value === 'practice') {
+    if (!startedByUser.value) startGame()
+    return
+  }
 
   const rect = canvas.getBoundingClientRect()
   const x = e.clientX - rect.left
@@ -92,12 +116,6 @@ function handlePointerDown(e: PointerEvent) {
 
   if (!startedByUser.value) {
     startGame()
-    if (z.kind === 'repeat' && assets) void playAudio(assets.audios[`en_${questionIndex.value}`])
-    return
-  }
-
-  if (z.kind === 'repeat') {
-    if (startedByUser.value && assets) void playAudio(assets.audios[`en_${questionIndex.value}`])
     return
   }
 
@@ -114,11 +132,10 @@ function handlePointerDown(e: PointerEvent) {
 
   clearTimeouts()
   if (correct) {
-    catPose.value = 'success'
-    renderer.render(getState())
+    if (assets) void playSuccessSound(assets.audios)
     pendingTimeouts.push(
       window.setTimeout(() => {
-        catPose.value = 'prepare'
+        if (mode.value !== 'practice') catPose.value = 'prepare'
         nextQuestion(true)
       }, 850),
     )
@@ -127,15 +144,95 @@ function handlePointerDown(e: PointerEvent) {
 
   pendingTimeouts.push(
     window.setTimeout(() => {
-      catPose.value = 'prepare'
+      if (mode.value !== 'practice') catPose.value = 'prepare'
       renderer?.render(getState())
     }, 550),
   )
-  if (assets) void playAudio(assets.audios[`en_${questionIndex.value}`])
+  if (assets) void playQuestionAudio()
+}
+
+const practiceInputEl = ref<HTMLDivElement | null>(null)
+const practiceInput = ref('')
+function submitPractice() {
+  if (!startedByUser.value) return
+  const q = vocabItems[questionIndex.value]
+  const input = practiceInput.value.trim()
+  practiceInput.value = ''
+  const target = q.en.trim()
+  const correct = input.toLowerCase() === target.toLowerCase()
+  lastChoice.value = {
+    index: questionIndex.value,
+    result: correct ? 'correct' : 'wrong',
+    untilMs: Date.now() + 700,
+  }
+  renderer?.render(getState())
+  clearTimeouts()
+  if (correct) {
+    if (assets) void playSuccessSound(assets.audios)
+    pendingTimeouts.push(
+      window.setTimeout(() => {
+        if (mode.value !== 'practice') catPose.value = 'prepare'
+        nextQuestion(true)
+      }, 850),
+    )
+    return
+  }
+  if (assets) void playQuestionAudio()
+}
+
+const practiceBoxStyle = computed(() => {
+  const canvas = canvasRef.value
+  if (!canvas || !assets) return {}
+  const w = canvas.clientWidth
+  const h = canvas.clientHeight
+  const catImgKey: Record<CatPose, string> = {
+    prepare: 'cat_prepare',
+    left: 'cat_left',
+    center: 'cat_center',
+    right: 'cat_right',
+    success: 'cat_success',
+  }
+  const catImg = assets.images[catImgKey[catPose.value]]
+  const baseCatW = w * 0.62
+  const catW = catPose.value === 'prepare' ? baseCatW * 0.8 : baseCatW
+  const catScale = catW / catImg.width
+  const catH = catImg.height * catScale
+  const catY = h * 0.72 - catH * 0.78
+  const bubbleW = Math.min(w * 0.78, 340)
+  const bubbleH = Math.max(44, Math.round(h * 0.09))
+  const bubbleY = Math.round(h * 0.25)
+  return {
+    left: '50%',
+    transform: 'translateX(-50%)',
+    top: `${bubbleY}px`,
+    width: `${bubbleW}px`,
+  }
+})
+
+function onKeyPress(ch: string) {
+  practiceInput.value += ch.toLowerCase()
+}
+function onKeySpace() {
+  practiceInput.value += ' '
+}
+function onKeyDelete() {
+  practiceInput.value = practiceInput.value.slice(0, -1)
+}
+
+function handleGlobalPointerDown(e: PointerEvent) {
+  if (!showKeyboard.value) return
+  const target = e.target as Node | null
+  const inPractice = practiceInputEl.value?.contains(target as Node) ?? false
+  const inKeyboard = keyboardWrapRef.value?.contains(target as Node) ?? false
+  if (!inPractice && !inKeyboard) {
+    showKeyboard.value = false
+  }
 }
 
 onMounted(async () => {
   try {
+    const v = localStorage.getItem('game.mode')
+    if (v === 'practice' || v === 'dictation') mode.value = v
     assets = await loadGameAssets()
     const canvas = canvasRef.value
     if (!canvas) throw new Error('canvas not found')
@@ -146,9 +243,15 @@ onMounted(async () => {
     window.addEventListener('orientationchange', resizeCanvas)
     window.addEventListener('resize', resizeCanvas)
     canvas.addEventListener('pointerdown', handlePointerDown, { passive: false })
+    document.addEventListener('pointerdown', handleGlobalPointerDown, { passive: true })
 
     phase.value = 'ready'
     resizeCanvas()
+    const r = localStorage.getItem('game.restart')
+    if (r === '1') {
+      localStorage.removeItem('game.restart')
+      startGame()
+    }
   } catch (err) {
     errorText.value = err instanceof Error ? err.message : String(err)
     phase.value = 'ready'
@@ -162,12 +265,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('orientationchange', resizeCanvas)
   window.removeEventListener('resize', resizeCanvas)
   canvasRef.value?.removeEventListener('pointerdown', handlePointerDown)
+  document.removeEventListener('pointerdown', handleGlobalPointerDown)
 })
 </script>
 
 <template>
   <div ref="shellRef" class="game-shell">
     <canvas ref="canvasRef" class="game-canvas" />
+    <div class="brand">英语咪</div>
 
     <div v-if="phase === 'loading'" class="overlay">
       <div class="overlay-card">加载中…</div>
@@ -186,17 +291,33 @@ onBeforeUnmount(() => {
         <div class="overlay-body">开始后会播放英文读音</div>
       </div>
     </div>
+
+    <div v-else-if="mode === 'practice'" class="practice-box" :style="practiceBoxStyle">
+      <div class="practice-label">
+        {{ vocabItems[questionIndex]?.zh }}：<span class="en">{{ vocabItems[questionIndex]?.en }}</span>
+      </div>
+      <div ref="practiceInputEl" class="practice-input" :class="{ placeholder: !practiceInput }"
+        @click="showKeyboard = true">
+        {{ practiceInput || '请输入英文' }}
+      </div>
+    </div>
+    <div v-if="mode === 'practice' && showKeyboard" ref="keyboardWrapRef">
+      <EnglishKeyboard @press="onKeyPress" @space="onKeySpace" @confirm="submitPractice" @cancel="showKeyboard = false"
+        @delete="onKeyDelete" />
+    </div>
   </div>
 </template>
 
 <style scoped>
 .game-shell {
-  width: min(100vw, 420px);
+  height: 100vh;
+  height: 100dvh;
   aspect-ratio: 9 / 16;
-  max-height: 100vh;
-  margin: 0 auto;
+  width: auto;
+  margin-left: auto;
+  margin-right: auto;
   position: relative;
-  border-radius: 16px;
+  border-radius: 0;
   overflow: hidden;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
 }
@@ -209,6 +330,33 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
+.brand {
+  position: absolute;
+  top: 12px;
+  right: 0;
+  color: #fff;
+  font-weight: 700;
+  font-size: 22px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  z-index: 30;
+  pointer-events: none;
+  width: 100vw;
+  text-align: center;
+}
+
+.mobile .game-shell,
+@media (hover: none) and (pointer: coarse) {
+  .game-shell {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    aspect-ratio: auto;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
 .overlay {
   position: absolute;
   inset: 0;
@@ -216,6 +364,45 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.35);
+}
+
+.practice-box {
+  position: absolute;
+}
+
+.practice-label {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.96);
+  color: rgba(0, 0, 0, 0.88);
+  border-radius: 12px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 20px;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.08);
+}
+.practice-label .en {
+  font-weight: 700;
+}
+
+.practice-input {
+  width: 100%;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  color: rgba(0, 0, 0, 0.9);
+  font-size: 16px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.08);
+}
+
+.practice-input.placeholder {
+  color: rgba(0, 0, 0, 0.4);
 }
 
 .overlay-card {
