@@ -116,6 +116,8 @@ startRecording();
 </script>
 
 <style scoped lang="scss">
+@use "sass:math";
+
 .voice-message {
   background: rgba(233, 69, 96, 0.1);
   border: 1px solid rgba(233, 69, 96, 0.3);
@@ -154,7 +156,7 @@ startRecording();
 
       @for $i from 1 through 20 {
         &:nth-child(#{$i}) {
-          height: 8px + random(16) + px;
+          height: 8px + math.random(16) + px;
           animation-delay: #{$i * 0.05}s;
         }
       }
