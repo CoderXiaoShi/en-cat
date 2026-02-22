@@ -344,7 +344,16 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
-.mobile .game-shell,
+.mobile .game-shell {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  aspect-ratio: auto;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 @media (hover: none) and (pointer: coarse) {
   .game-shell {
     width: 100vw;

@@ -1,0 +1,23 @@
+{
+  "name": "en-cat-window",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "npx electron-builder"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^40.6.0"
+  },
+  "build": {
+    "appId": "com.example.app",
+    "productName": "Hello World",
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
